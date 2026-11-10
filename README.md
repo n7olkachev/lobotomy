@@ -103,6 +103,13 @@ later visits ask Hugging Face for nothing. Three small files are ours and ship w
 `src/worker.ts` shows the library one model directory made of the two. Hugging Face cannot be reached from
 everywhere (mainland China blocks it): the page says so when the download fails.
 
+The runtime's wasm also ships with the site, in `public/ort/<version>/`, and not from jsDelivr as the library would
+have it. It is the published `ort-wasm-simd-threaded.asyncify.wasm` of that version of onnxruntime-web with its
+mid-size functions padded, so that Safari's optimizing compiler leaves them alone: compiling them is what made an
+iPhone kill the tab once the model began to answer ([WebKit bug 304810](https://bugs.webkit.org/show_bug.cgi?id=304810)).
+`scripts/pad-ort-wasm.py` makes it, and has to be run again when `@huggingface/transformers` brings a new
+onnxruntime-web: until then the worker sees that the versions differ and loads the stock file.
+
 A directory named with `VITE_MODEL_BASE` holds everything:
 
     config.json  tokenizer.json  tokenizer_config.json  generation_config.json

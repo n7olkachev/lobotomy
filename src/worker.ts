@@ -54,6 +54,20 @@ const statsBase = LOCAL ? `${LOCAL}${MODEL_ID}/` : OURS;
 const WEIGHTS_URL = LOCAL ? `${statsBase}onnx/${GRAPH}_data` : `${HUB}${HUB_REPO}/resolve/${HUB_REV}/onnx/${STOCK}_data`;
 env.allowLocalModels = false;
 
+// The runtime's wasm. The library would take it from jsDelivr as onnxruntime-web publishes it, and Safari on an
+// iPhone kills the tab soon after the model starts to answer: its optimizing compiler needs gigabytes for some of the
+// runtime's functions (WebKit bug 304810). Ours is the same file with those functions padded past the size that
+// compiler accepts (scripts/pad-ort-wasm.py), and ships with the site. It only fits the build it was made from, and
+// the browser keeps it for good under its address: a new version of the runtime needs a new file in a new directory.
+const ORT_BUILD = "1.31.0-dev.20260914-8d85527a0";
+const ort = env.backends.onnx;
+if (ort.wasm && ort.versions?.web === ORT_BUILD) {
+  const dir = new URL(`${import.meta.env.BASE_URL}ort/${ORT_BUILD}/`, self.location.origin).href;
+  ort.wasm.wasmPaths = { mjs: `${dir}ort-wasm-simd-threaded.asyncify.mjs`, wasm: `${dir}ort-wasm-simd-threaded.asyncify.wasm` };
+} else {
+  console.warn(`onnxruntime-web is ${ort.versions?.web}, the padded wasm is for ${ORT_BUILD}: the stock one is used (see scripts/pad-ort-wasm.py)`);
+}
+
 // Not everybody can reach Hugging Face: mainland China blocks it, and it can be down. A request to it that fails is
 // remembered here, so that the visitor is told that, and not "Failed to fetch".
 let hubFailure: { status?: number } | null = null; // no status: there was no answer at all
