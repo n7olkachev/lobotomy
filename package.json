@@ -1,0 +1,22 @@
+{
+  "name": "lobotomy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
+    "@preact/signals": "^2.2.0",
+    "preact": "^10.27.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.0",
+    "@webgpu/types": "^0.1.74",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}
