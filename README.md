@@ -2,6 +2,8 @@
 
 **https://n7olkachev.github.io/lobotomy/**
 
+[![The brain of the model as 86,016 points of light, with an electrode in the neuron named Coffee](public/og.jpg)](https://n7olkachev.github.io/lobotomy/)
+
 Explore the 86,016 MLP neurons of Qwen3.5-0.8B while it runs on WebGPU in your browser: a 3D brain to poke on one
 side, the patient to talk to on the other. Push one neuron and watch the personality change. No server: the model is
 an ONNX export with one extra graph input (`steer[24, 3584]`) that adds a constant to any neuron's activation at
