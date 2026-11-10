@@ -63,6 +63,8 @@ file in `public/survey/` and add the layer to `index.json`.
   generation, coherence scoring (perplexity of the answer under the unsteered model = one extra prefill). A run is a list
   of variants (steered, untouched, or the six rungs of a dose ladder). Decoding is greedy, so answers are cached per
   (prompt, recipe), and a generation that gets stuck in a loop is cut short. `scan` reads faces one prefill at a time.
+- `src/weights.ts` — the 470 MB of weights: downloaded straight to disk (the origin's private file system) and handed
+  to the runtime a tensor at a time, so that they are never all in memory at once (a phone has no room for that).
 - `src/steer.ts` — recipe strings (`L14N8949+1 L13N7956-1`), dose normalisation
   (`steer[L,n] = dose · median‖h_L‖ / ‖W_down[:,n]‖`), stats loading.
 - `src/store.ts` — the map: readings per face (survey files + the player's scans), what counts as a signal,

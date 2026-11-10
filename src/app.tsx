@@ -10,6 +10,7 @@ import { formatRecipe, parseRecipe, type Probe } from "./steer";
 import { SCREEN, STRONG, WEAK, exportLayer, faceOf, heardKey, layerStats, loadJSON, loadSurvey, reading, saveJSON, setBase, setReading, signOf, signals, tile, totals, useScans, type Heard } from "./store";
 import { lead } from "./text";
 import { diagnose } from "./vitals";
+import { WEIGHTS_NOTE } from "./weights";
 import type { InMsg, OutMsg } from "./worker";
 
 type RunKind = "case" | "ladder";
@@ -399,15 +400,15 @@ export function App() {
     send({ type: "load", cached });
   };
 
-  // Returning visitors already have the 470 MB in the browser cache: skip the button.
+  // Returning visitors already have the 470 MB on disk: skip the button.
   // (?asleep in the address keeps the patient asleep, to see the page as a first-time visitor does.)
   // A phone that runs out of memory while the model loads kills the tab and opens it again: a load that was
   // started and never finished is not started again without being asked, or the page would never come up.
   useEffect(() => {
-    if (!HAS_GPU || !("caches" in window) || ASLEEP) return;
+    if (!HAS_GPU || ASLEEP) return;
     if (marked(LOADING)) { setFainted(true); return; }
     let gone = false;
-    caches.open("transformers-cache").then((c) => c.keys()).then((keys) => { if (!gone && keys.some((r) => /model_steer.*onnx_data/.test(r.url))) load(true); }).catch(() => { /* no cache access: the button stays */ });
+    navigator.storage?.getDirectory?.().then((d) => d.getFileHandle(WEIGHTS_NOTE)).then(() => { if (!gone) load(true); }).catch(() => { /* nothing on disk: the button stays */ });
     return () => { gone = true; };
   }, []);
   useEffect(() => {

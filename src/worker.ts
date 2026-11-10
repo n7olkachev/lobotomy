@@ -4,6 +4,7 @@ import { AutoTokenizer, AutoModelForCausalLM, TextStreamer, Tensor, env, Interru
 import type { PreTrainedTokenizer, PreTrainedModel } from "@huggingface/transformers";
 import { formatRecipe, loadStats, probesToSteer, type Probe, type Stats } from "./steer";
 import { isStuck } from "./text";
+import { openWeights, type Weights } from "./weights";
 
 /** One generation of a run. No probes = the untouched model. */
 export interface Variant { key: string; probes: Probe[] }
@@ -36,11 +37,12 @@ const post = (m: OutMsg) => (self as any).postMessage(m);
 // Where the model comes from. The weights, the tokenizer and the config are the stock onnx-community export,
 // downloaded from Hugging Face as they are. Three small files are ours and ship with the site (public/steer/): the
 // graph with the extra `steer` input, and the two files of the dose normalisation.
+const HUB = env.remoteHost;
 const HUB_REPO = "onnx-community/Qwen3.5-0.8B-Text-ONNX";
 // The graph finds its tensors in the weights file by offset, so it only fits the revision it was cut from.
 const HUB_REV = "25cdf33f386b487a25f3d743e86442517bdb77ff";
 const STOCK = "model_q4f16.onnx"; // the graph ours was cut from; the weights are STOCK + "_data"
-// Ours. It calls the weights GRAPH + "_data". The browser keeps both for good under these names and HUB_REV: a graph
+// Ours. It calls the weights GRAPH + "_data". The browser keeps it for good under this name and HUB_REV: a graph
 // that is cut again needs a new name.
 const GRAPH_NAME = "model_steer", GRAPH = `${GRAPH_NAME}_q4f16.onnx`;
 const OURS = new URL(`${import.meta.env.BASE_URL}steer/`, self.location.origin).href;
@@ -49,6 +51,7 @@ const OURS = new URL(`${import.meta.env.BASE_URL}steer/`, self.location.origin).
 const LOCAL = import.meta.env.VITE_MODEL_BASE ? new URL(import.meta.env.VITE_MODEL_BASE, self.location.origin).href : "";
 const MODEL_ID = LOCAL ? import.meta.env.VITE_MODEL_ID ?? "q35-0.8b-text" : HUB_REPO;
 const statsBase = LOCAL ? `${LOCAL}${MODEL_ID}/` : OURS;
+const WEIGHTS_URL = LOCAL ? `${statsBase}onnx/${GRAPH}_data` : `${HUB}${HUB_REPO}/resolve/${HUB_REV}/onnx/${STOCK}_data`;
 env.allowLocalModels = false;
 
 // Not everybody can reach Hugging Face: mainland China blocks it, and it can be down. A request to it that fails is
@@ -60,20 +63,18 @@ if (LOCAL) {
   env.remoteHost = LOCAL;
   env.remotePathTemplate = "{model}/";
 } else {
-  const HUB = env.remoteHost;
   // The revision goes here and not into `revision`: the library forgets that option in places and asks for "main".
   env.remotePathTemplate = `{model}/resolve/${HUB_REV}/`;
-  // To the library this is one model directory: their repository, with our graph in it, and the weights under the
-  // name our graph has for them.
+  // To the library this is one model directory: their repository, with our graph in it. (The weights do not go
+  // through the library: weights.ts.)
   env.fetch = async (input: string | URL, init?: RequestInit) => {
-    let url = String(input);
+    const url = String(input);
     if (!url.startsWith(HUB)) return fetch(input, init);
     if (url.endsWith(`/${GRAPH}`)) return fetch(OURS + GRAPH, init);
-    if (url.endsWith(`/${GRAPH}_data`)) url = url.slice(0, -`${GRAPH}_data`.length) + `${STOCK}_data`;
     const giveUp = new AbortController();
     const timer = setTimeout(() => giveUp.abort(), HUB_PATIENCE);
     try {
-      const res = await fetch(url, { ...init, signal: giveUp.signal });
+      const res = await fetch(input, { ...init, signal: giveUp.signal });
       if (!res.ok && res.status !== 404) hubFailure = { status: res.status }; // a 404 is the library's to report
       return res;
     } catch (err) {
@@ -110,7 +111,7 @@ function setSteer(data: Float32Array | null) {
 }
 
 async function load(cached: boolean) {
-  const verb = cached ? "waking the model" : "downloading model"; // the progress callback fires for cached files too
+  const verb = cached ? "waking the model" : "downloading model"; // cached: the page saw the weights on disk
   const t0 = performance.now();
   let gpu: any = null;
   if ((navigator as any).gpu) {
@@ -122,23 +123,30 @@ async function load(cached: boolean) {
   stats = await loadStats(statsBase);
   NL = stats.num_layers; I = stats.intermediate;
   hubFailure = null; downloading = false;
+  let weights: Weights | null = null;
   try {
-    post({ type: "status", text: "loading tokenizer" });
-    tok = await AutoTokenizer.from_pretrained(MODEL_ID);
     post({ type: "status", text: verb, progress: 0 });
+    weights = await openWeights(WEIGHTS_URL, (url) => env.fetch(url), (loaded, total) => {
+      downloading = true;
+      post({ type: "status", text: `${verb} (${(loaded / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB)`, progress: loaded / total });
+    });
+    downloading = false;
+    post({ type: "status", text: "compiling shaders (first run only)", progress: 1 });
+    // The library downloads the graph; the weights it is handed, under the name the graph has for them.
     model = await AutoModelForCausalLM.from_pretrained(MODEL_ID, {
-      dtype: "q4f16", device: "webgpu", model_file_name: GRAPH_NAME, use_external_data_format: 1,
-      progress_callback: (p: any) => {
-        if (typeof p.file !== "string" || !p.file.includes("onnx_data")) return;
-        if (p.status === "progress") { downloading = true; post({ type: "status", text: `${verb} (${(p.loaded / 1e6).toFixed(0)} / ${(p.total / 1e6).toFixed(0)} MB)`, progress: p.progress / 100 }); }
-        // from here on nothing more is asked of Hugging Face: what fails now is not its doing
-        else if (p.status === "done") { downloading = false; hubFailure = null; post({ type: "status", text: "compiling shaders (first run only)", progress: 1 }); }
-      },
+      dtype: "q4f16", device: "webgpu", model_file_name: GRAPH_NAME, use_external_data_format: false,
+      session_options: { externalData: [{ path: `${GRAPH}_data`, data: weights.bytes }] },
     } as any);
+    // The tokenizer comes after the model: building the model is when memory is tightest, and the tokenizer (19 MB
+    // of JSON, several times that once parsed) need not be there yet.
+    post({ type: "status", text: "loading tokenizer", progress: 1 });
+    tok = await AutoTokenizer.from_pretrained(MODEL_ID);
   } catch (err: any) {
-    if (hubFailure || downloading) throw new Error(hubDown());
+    if (!LOCAL && (hubFailure || downloading)) throw new Error(hubDown());
     // the weights are 16-bit floats: a GPU without them in its shaders (some phones) cannot run the model
     throw new Error(String(err?.message ?? err) + (gpu.f16 ? "" : " This GPU has no 16-bit float shaders (shader-f16), which the model needs."));
+  } finally {
+    weights?.close();
   }
   // --- the patch: hide `steer` from validateInputs, inject it in run()
   const sess: any = (model as any).sessions.model;
