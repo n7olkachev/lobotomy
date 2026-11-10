@@ -7,8 +7,8 @@
 Explore the 86,016 MLP neurons of Qwen3.5-0.8B while it runs on WebGPU in your browser: a 3D brain to poke on one
 side, the patient to talk to on the other. Push one neuron and watch the personality change. No server: the model is
 an ONNX export with one extra graph input (`steer[24, 3584]`) that adds a constant to any neuron's activation at
-every token — the same intervention as the "Evil Qwen" recipes (Lyra, Oct 2026), compiled into the graph.
-See `~/ai/research/04-neuron-steer-onnx/FINDINGS.md`.
+every token — the same intervention as the "Evil Qwen" recipes (Lyra, Oct 2026), compiled into the graph
+(`scripts/steer/surgery.py`, see "Where the model comes from").
 
 ## Dev
 
@@ -101,6 +101,16 @@ later visits ask Hugging Face for nothing. Three small files are ours and ship w
 
     model_steer_q4f16.onnx       # their graph model_q4f16.onnx with the `steer` input added (surgery.py); reads their weights file
     stats.json  down_norms.bin   # dose normalisation (from calib.py)
+
+The scripts that make them are in `scripts/steer/`, and they give these files back byte for byte. `surgery.py` needs
+`onnx` and `numpy`; `calib.py` runs the PyTorch model once (`torch`, `transformers`) and reads it from
+`scripts/steer/models/q35-0.8b-text/`, a download of the export above:
+
+    cd scripts/steer/models/q35-0.8b-text/onnx
+    python ../../../surgery.py model_q4f16.onnx model_steer_q4f16.onnx --data-name model_steer_q4f16.onnx_data
+    cd ../../.. && python calib.py      # stats/stats.json, stats/down_norms.bin
+
+`common.py` also holds the same intervention as a PyTorch hook (`TorchSteerer`), the reference the graph was checked against.
 
 `src/worker.ts` shows the library one model directory made of the two. Hugging Face cannot be reached from
 everywhere (mainland China blocks it): the page says so when the download fails.

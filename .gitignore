@@ -3,3 +3,6 @@ dist
 .backup
 *.local
 .DS_Store
+__pycache__
+scripts/steer/models
+scripts/steer/stats
