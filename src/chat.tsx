@@ -440,7 +440,8 @@ export function Chat(p: {
       <footer class="composer">
         {ready && (
           <>
-            <div class="presets" aria-label="Questions to ask">
+            {/* Safari does not give a tapped button the focus: the box would lose it, the row (shown while the box has it) would go, and the tap with it. */}
+            <div class="presets" aria-label="Questions to ask" onMouseDown={(e) => e.preventDefault()}>
               {p.presets.map((q) => <button key={q} class={`chip ${q === p.question ? "on" : ""}`} onClick={() => { p.onAsk(q); fold(); }}>{q}</button>)}
             </div>
             <form class="ask" onSubmit={submit}>
