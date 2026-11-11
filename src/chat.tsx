@@ -95,14 +95,24 @@ function Ekg({ kind }: { kind: string }) {
 }
 
 /** The strip on top of the conversation: who the patient is, how it is doing, how much of it was changed. */
-function Monitor({ phase, busy, vitals, changed, gpu, children }: { phase: Phase; busy: boolean; vitals: Vitals | null; changed: number; gpu: string; children?: ComponentChildren }) {
+function Monitor({ phase, busy, vitals, changed, gpu, raised, onRaise, children }: {
+  phase: Phase; busy: boolean; vitals: Vitals | null; changed: number; gpu: string; raised: boolean; onRaise: (on: boolean) => void; children?: ComponentChildren;
+}) {
   const kind = phase !== "ready" ? (phase === "loading" ? "asleep" : "off") : busy ? "live" : vitals ? vitals.state : "stable";
   const state = phase === "idle" ? "asleep" : phase === "loading" ? "waking up" : phase === "error" ? "no pulse" : busy ? "answering" : vitals && vitals.state !== "intact" ? vitals.label : "awake";
+  // On a phone the strip is the handle between the brain and the conversation: a tap turns them around, and so does a
+  // swipe, for whoever takes the handle for something to drag.
+  const from = useRef<number | null>(null), swiped = useRef(false);
   return (
     <header class={`monitor v-${kind}`}>
+      <button class="grip" aria-expanded={raised} aria-label={raised ? "Make the conversation smaller" : "Make the conversation bigger"}
+        onPointerDown={(e) => { from.current = e.clientY; swiped.current = false; }}
+        onPointerUp={(e) => { const dy = from.current === null ? 0 : e.clientY - from.current; from.current = null; if (Math.abs(dy) > 14) { swiped.current = true; onRaise(dy < 0); } }}
+        onPointerCancel={() => { from.current = null; }}
+        onClick={() => { if (!swiped.current) onRaise(!raised); swiped.current = false; }} />
       <div class="monitor-id">
         <b>The patient</b>
-        <span title={gpu ? `Running on ${gpu}. Nothing is sent to a server.` : "A language model with 86,016 MLP neurons in 24 layers"}>Qwen3.5 · 0.8B{gpu ? " · runs on your GPU, no server" : " · a real language model"}</span>
+        <span title={gpu ? `Running locally on ${gpu}. Nothing leaves this device.` : "A language model with 86,016 MLP neurons in 24 layers"}>Qwen3.5 · 0.8B{gpu ? " · runs on your GPU, no server" : " · a real language model"}</span>
       </div>
       <div class={`monitor-count ${changed ? "changed" : ""}`} title={`${changed} of the model's ${TOTAL} neurons are being pushed`}>
         <b>{changed}</b><span>of {TOTAL}<br />neurons changed</span>
@@ -114,6 +124,9 @@ function Monitor({ phase, busy, vitals, changed, gpu, children }: { phase: Phase
 }
 
 // ---- the conversation ------------------------------------------------------------------------------------------
+
+/** "2 of 86,016 neurons changed"; on a phone, where the monitor right above says out of how many, "2 neurons changed". */
+const Changed = ({ n }: { n: number }) => <><em>{n}</em><span class="wide-only"> of {TOTAL} neurons</span><span class="narrow-only"> {n === 1 ? "neuron" : "neurons"}</span> changed</>;
 
 function sizeClass(text: string): string {
   const loop = findLoop(text);
@@ -136,20 +149,20 @@ const TurnView = memo(function TurnView({ t, again, last, hideBefore, catalog, c
   return (
     <>
       {t.op && <div class="op"><span>⚡ {t.op}</span></div>}
-      <div class={`msg user ${again ? "again" : ""}`}><p title={again ? "Asked again, because the brain was changed" : ""}>{again && <i>↻ </i>}{t.prompt}</p></div>
+      <div class={`msg user ${again ? "again" : ""}`}><p title={again ? "Asked again after the brain was changed" : ""}>{again && <i>↻ </i>}{t.prompt}</p></div>
       <div class={`msg patient ${steered ? "steered" : "intact"} ${v ? `v-${v.state}` : ""}`}>
         <span class="avatar" aria-hidden="true">{title.emoji}</span>
         <div class="bubble">
           <div class="who">
             <b>{title.name}</b>
-            <span>{steered ? <><em>{t.probes.length}</em> of {TOTAL} neurons changed</> : "nothing changed"}</span>
+            <span>{steered ? <Changed n={t.probes.length} /> : "nothing changed"}</span>
           </div>
           <div class={`quote ${sizeClass(main)}`}>
-            {main ? <Answer text={main} live={live} /> : <span class="dim">{live ? <span class="caret" /> : t.stopped ? "stopped" : "(says nothing at all)"}</span>}
+            {main ? <Answer text={main} live={live} /> : <span class="dim">{live ? <span class="caret" /> : t.stopped ? "stopped" : "(no answer)"}</span>}
           </div>
           {steered && !hideBefore && (t.before || !t.done) && (
-            <div class={`untouched ${open ? "open" : ""}`} onClick={() => setOpen(!open)} title={open ? "" : "Click to read the whole answer"}>
-              <span class="lbl">untouched, it says</span>
+            <div class={`untouched ${open ? "open" : ""}`} onClick={() => setOpen(!open)} title={open ? "" : "Show the whole answer"}>
+              <span class="lbl">Untouched model</span>
               <div class="untouched-text">{t.before ? <Answer text={t.before} live={!t.beforeDone && !t.done} /> : <span class="dim">…</span>}</div>
             </div>
           )}
@@ -163,16 +176,16 @@ const TurnView = memo(function TurnView({ t, again, last, hideBefore, catalog, c
           )}
           {nameable && (
             <form class="naming" onSubmit={(e) => { e.preventDefault(); if (name.trim()) { act.name(t, name.trim()); setName(""); } }}>
-              <span>Nobody has named this one. What is it?</span>
-              <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="e.g. 🚂 Train conductor" maxLength={40} aria-label="A name for this neuron" />
+              <span>This {t.probes.length === 1 ? "neuron" : "combination"} has no name yet. What would you call it?</span>
+              <input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="🚂 Train conductor" maxLength={40} aria-label="Name" />
               <button disabled={!name.trim()}>name it</button>
             </form>
           )}
           {settled && steered && !t.stopped && (
             <div class="actions">
-              <button class="primary" onClick={() => act.share(t)} title="A picture of this operation to post, and a link that repeats it">Share</button>
-              {last && <button onClick={act.ladder} disabled={!canLadder} title="Ask the same question at six rising strengths and watch the patient go">Turn it up<span class="wide-only">, step by step</span></button>}
-              <button onClick={() => act.link(t)} title="Copy a link that repeats this operation">Copy link</button>
+              <button class="primary" onClick={() => act.share(t)} title="A picture of this result to post, and a link that reproduces it">Share</button>
+              {last && <button onClick={act.ladder} disabled={!canLadder} title="Ask the same question at six increasing strengths">Turn it up<span class="wide-only">, step by step</span></button>}
+              <button onClick={() => act.link(t)} title="Copy a link that reproduces this result">Copy link</button>
               <span class="rx" title="The recipe: layer, neuron and strength of every electrode">℞ {formatRecipe(t.probes)}</span>
             </div>
           )}
@@ -230,7 +243,7 @@ function Recording({ k, auto }: { k: Knob; auto: boolean }) {
       <div class={`msg patient steered recording ${auto ? "auto" : ""}`}>
         <span class="avatar" aria-hidden="true">{emojiOf(k)}</span>
         <div class="bubble">
-          <div class="who"><b>{k.name}</b><span><em>{k.probes.length}</em> of {TOTAL} neurons changed · <i class="rec">recording</i></span></div>
+          <div class="who"><b>{k.name}</b><span><span class="wide-only"><em>{k.probes.length}</em> of {TOTAL} neurons changed · </span><i class="rec">recording</i></span></div>
           <div class={`quote ${sizeClass(full)}`}><Answer text={typed} live={typed.length < full.length} /></div>
           <p class="note">{k.desc}</p>
           {auto && <div class="autoplay" title="Playing recordings. Tap a neuron to take over."><i /></div>}
@@ -243,21 +256,133 @@ function Recording({ k, auto }: { k: Knob; auto: boolean }) {
 function Intro({ named, featured, onTry }: { named: number; featured: Knob[]; onTry: (k: Knob) => void }) {
   return (
     <article class="intro">
-      <h2>The brain of a real AI. <em>Poke it.</em></h2>
-      <p>A language model (Qwen3.5, 0.8 billion parameters) runs in this tab, on your GPU. That is its brain: <b>{TOTAL} neurons</b>, 24 layers of 3,584.</p>
+      <h2>One of these neurons is <em>coffee.</em></h2>
+      <p>A real language model (Alibaba's Qwen3.5, the small 0.8B version) runs right in this tab, on your own GPU. Every dot of the brain is one of its <b>{TOTAL} neurons</b>.</p>
       <ol>
-        <li><b>Tap a neuron.</b> It is pushed up or down while the model thinks.</li>
-        <li><b>The patient answers again</b>, as coffee, a lawyer, a Victorian schoolgirl…</li>
-        <li><b>Find a new one and name it.</b> Only {named} have names so far.</li>
+        <li><b>Tap a neuron</b> to push it up or down while the model writes.</li>
+        <li><b>It answers the same question again</b>, now as coffee, a lawyer, a Victorian schoolgirl…</li>
+        <li><b>Name the ones you find.</b> Only {named} have names so far.</li>
       </ol>
       {featured.length > 0 && (
         <div class="try">
-          <span>Try a known one:</span>
+          <span>Start with:</span>
           {featured.map((k) => <button key={k.name} class="chip" onClick={() => onTry(k)} title={k.desc}>{emojiOf(k)} {k.name}</button>)}
         </div>
       )}
     </article>
   );
+}
+
+// ---- where the conversation is scrolled to ---------------------------------------------------------------------
+
+const ROOM = 280;   // px of an answer that have to fit under its question for the question to stay in the window
+const NEAR = 12;    // this close to the end counts as the end
+const SETTLE = 150; // ms without a scroll or wheel event after which the reader has stopped scrolling
+
+/**
+ * Brings every new exchange into view, and leaves a reader who scrolls alone.
+ *
+ * An exchange that fits into the window is shown whole, with the conversation ending at the bottom edge. A taller one
+ * stays at its beginning while the rest is typed below the edge: at the question or, when that would leave no room to
+ * read the answer (the few lines of window a phone has), at the answer. Once the reader scrolls, the page keeps its
+ * hands off: it follows the text again only if they went to the end, and otherwise waits for the next exchange.
+ *
+ * `id` is the number of the turn or ladder that is last (the numbers only go up), null for a recording.
+ */
+function useFollow(key: string, id: number | null) {
+  const scroller = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null);
+  const st = useRef({
+    mode: "pin" as "pin" | "end" | "free",
+    /** a new exchange that has not been scrolled to yet */
+    due: false,
+    /** the reader's scrolling: a finger is down, or it was lifted (or the wheel turned) and the text may still be moving */
+    user: "" as "" | "touch" | "coast",
+    /** the scroll position as the page last set it or saw it, and how tall the window was then */
+    seen: 0, height: 0,
+    newest: -1, timer: 0,
+  }).current;
+
+  /** Where the last exchange belongs while nobody has scrolled. */
+  const pin = (el: HTMLElement): number => {
+    const max = el.scrollHeight - el.clientHeight;
+    const marks = el.querySelectorAll<HTMLElement>(".msg.user, .op, .msg.ladder");
+    let from: HTMLElement | undefined = marks[marks.length - 1];
+    if (!from) return max;
+    if (from.previousElementSibling?.classList.contains("op")) from = from.previousElementSibling as HTMLElement; // with the line that says what was done
+    const answers = el.querySelectorAll<HTMLElement>(".msg.patient");
+    const answer = answers[answers.length - 1];
+    let top = from.offsetTop;
+    if (answer && answer.offsetTop > top && el.clientHeight - 10 - (answer.offsetTop - top) < ROOM) top = answer.offsetTop;
+    return Math.max(0, Math.min(max, top - 10));
+  };
+  /** Sees that the text is not where the page left it: the reader scrolled (or the browser did, to stay in range). */
+  const sync = (el: HTMLElement): boolean => {
+    const top = el.scrollTop, resized = el.clientHeight !== st.height;
+    st.height = el.clientHeight;
+    if (Math.abs(top - st.seen) < 1) return false;
+    st.seen = top;
+    // Moved while the window was changing size, with no finger on it: that was the browser keeping the text in range
+    // (a keyboard going away), and says nothing about where the reader wants to be.
+    if (!st.due && (st.user || !resized)) {
+      const max = el.scrollHeight - el.clientHeight;
+      st.mode = max - top > NEAR ? "free" : pin(el) < max - NEAR ? "end" : "pin";
+    }
+    return true;
+  };
+  const follow = () => {
+    const el = scroller.current;
+    if (!el) return;
+    sync(el);
+    // A box in the conversation that is being typed in (the name of a neuron) is kept in view by the browser.
+    const typing = document.activeElement instanceof HTMLInputElement && el.contains(document.activeElement);
+    // Under a finger the text only moves for a new exchange.
+    if (st.mode === "free" || ((st.user || typing) && !st.due)) return;
+    const to = st.mode === "end" ? el.scrollHeight - el.clientHeight : pin(el);
+    if (Math.abs(el.scrollTop - to) >= 1) el.scrollTop = to;
+    st.seen = el.scrollTop;
+    st.due = false;
+  };
+
+  useLayoutEffect(() => {
+    if (id !== null && id <= st.newest) { st.mode = "free"; st.due = false; } // the last one was taken away: there is nothing new to show
+    else { st.mode = "pin"; st.due = true; if (id !== null) st.newest = id; }
+    follow();
+  }, [key]);
+
+  useEffect(() => {
+    const el = scroller.current!;
+    const settle = () => { clearTimeout(st.timer); st.timer = window.setTimeout(() => { st.user = ""; follow(); }, SETTLE); };
+    const lifted = (e: Event) => { if (!(e as TouchEvent).touches.length && st.user === "touch") { st.user = "coast"; settle(); } };
+    const touched = (e: TouchEvent) => {
+      st.user = "touch";
+      clearTimeout(st.timer);
+      // A finger is lifted from the element it came down on. An answer that is being typed may have redrawn that
+      // element away by then, and the event no longer passes through the page: listen on the element as well.
+      e.target?.addEventListener("touchend", lifted, { once: true, passive: true });
+      e.target?.addEventListener("touchcancel", lifted, { once: true, passive: true });
+    };
+    const wheeled = () => { if (st.user !== "touch") { st.user = "coast"; settle(); } };
+    // what a flick set in motion keeps moving after the finger is gone
+    const scrolled = () => { if (sync(el) && st.user === "coast") settle(); };
+    // Passive listeners: the browser does not wait for the page before it scrolls.
+    el.addEventListener("touchstart", touched, { passive: true });
+    el.addEventListener("wheel", wheeled, { passive: true });
+    el.addEventListener("scroll", scrolled, { passive: true });
+    document.addEventListener("touchend", lifted, { capture: true, passive: true });
+    document.addEventListener("touchcancel", lifted, { capture: true, passive: true });
+    // The text grows without this component being rendered again (a recording types itself), and the window changes
+    // size under it (a phone's keyboard, the card of the neuron above).
+    const ro = new ResizeObserver(follow);
+    ro.observe(el);
+    ro.observe(inner.current!);
+    return () => {
+      el.removeEventListener("touchstart", touched); el.removeEventListener("wheel", wheeled); el.removeEventListener("scroll", scrolled);
+      document.removeEventListener("touchend", lifted, { capture: true }); document.removeEventListener("touchcancel", lifted, { capture: true });
+      ro.disconnect();
+      clearTimeout(st.timer);
+    };
+  }, []);
+  return { scroller, inner };
 }
 
 export function Chat(p: {
@@ -269,41 +394,24 @@ export function Chat(p: {
   /** the persona whose recording is shown while there is no live model */
   recorded: Knob | null; autoplaying: boolean;
   act: Actions; settings?: ComponentChildren;
+  /** a phone: the conversation is pulled up over the brain */
+  raised: boolean; onRaise: (on: boolean) => void;
   onDraft: (s: string) => void; onAsk: (text: string) => void; onStop: () => void; onLoad: () => void; onTry: (k: Knob) => void;
 }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  // Follow the answer as it grows, unless the reader has scrolled away. An exchange that is taller than the window
-  // stays at its beginning (the question and the first lines), not at its buttons.
-  const pinned = useRef(0), inner = useRef<HTMLDivElement>(null);
-  const follow = () => {
-    const el = scroller.current;
-    if (!el || !stick.current) return;
-    const marks = el.querySelectorAll<HTMLElement>(".msg.user, .op");
-    let from: HTMLElement | undefined = marks[marks.length - 1];
-    if (from?.previousElementSibling?.classList.contains("op")) from = from.previousElementSibling as HTMLElement; // with the line that says what was done
-    pinned.current = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, from ? from.offsetTop - 10 : Infinity));
-    el.scrollTop = pinned.current;
-  };
-  useLayoutEffect(follow);
-  // text that types itself (a recording) grows without this component being rendered again
-  useEffect(() => {
-    const ro = new ResizeObserver(follow);
-    ro.observe(inner.current!);
-    return () => ro.disconnect();
-  }, []);
-  const onScroll = () => { const el = scroller.current!; stick.current = Math.abs(el.scrollTop - pinned.current) < 60 || el.scrollHeight - el.scrollTop - el.clientHeight < 60; };
-
   const turns = p.items.filter((it): it is { kind: "turn"; turn: Turn } => it.kind === "turn");
   const lastTurn = turns[turns.length - 1]?.turn ?? null;
   const ready = p.phase === "ready";
   const vitals = lastTurn && lastTurn.done && lastTurn.answered && !lastTurn.stopped ? vitalsOf(lastTurn) : null;
   const unheard = !ready && p.probes.length > 0 && !p.recorded;
+  // what is last in the conversation: a recording (or the line that says there is none), else the last turn or ladder
+  const tail = p.items[p.items.length - 1];
+  const tailId = tail ? (tail.kind === "turn" ? tail.turn.id : tail.ladder.id) : 0;
+  const playing = !ready && p.recorded ? p.recorded.name : unheard ? "" : null;
+  const { scroller, inner } = useFollow(playing !== null ? `recording ${playing}` : `item ${tailId}`, playing !== null ? null : tailId);
   /** On a phone: put the keyboard away, the answer is under it. */
   const fold = () => { if (matchMedia("(pointer: coarse)").matches) (document.activeElement as HTMLElement | null)?.blur?.(); };
   const submit = (e: Event) => {
     e.preventDefault();
-    stick.current = true;
     p.onAsk((e.currentTarget as HTMLFormElement).querySelector("input")!.value); // what is in the box now, typed or pasted or dictated
     fold();
   };
@@ -311,8 +419,8 @@ export function Chat(p: {
   let prev: Turn | null = null;
   return (
     <section class="chat">
-      <Monitor phase={p.phase} busy={p.busy} vitals={vitals} changed={p.probes.length} gpu={ready ? p.gpu : ""}>{p.settings}</Monitor>
-      <div class="timeline" ref={scroller} onScroll={onScroll}>
+      <Monitor phase={p.phase} busy={p.busy} vitals={vitals} changed={p.probes.length} gpu={ready ? p.gpu : ""} raised={p.raised} onRaise={p.onRaise}>{p.settings}</Monitor>
+      <div class="timeline" ref={scroller}>
        <div class="timeline-in" ref={inner}>
         {turns.length === 0 && <Intro named={p.catalog.length} featured={p.featured} onTry={p.onTry} />}
         {p.items.map((it) => {
@@ -326,14 +434,14 @@ export function Chat(p: {
           );
         })}
         {!ready && p.recorded && <Recording key={p.recorded.name} k={p.recorded} auto={p.autoplaying} />}
-        {unheard && <div class="op quiet"><span>Nobody has recorded this one. {p.hasGpu ? "Wake the patient to hear it." : "Hearing it needs a browser with WebGPU."}</span></div>}
+        {unheard && <div class="op quiet"><span>There is no recording of this one. {p.hasGpu ? "Wake the patient to hear it live." : "Hearing it live takes a browser with WebGPU."}</span></div>}
        </div>
       </div>
       <footer class="composer">
         {ready && (
           <>
             <div class="presets" aria-label="Questions to ask">
-              {p.presets.map((q) => <button key={q} class={`chip ${q === p.question ? "on" : ""}`} onClick={() => { stick.current = true; p.onAsk(q); fold(); }}>{q}</button>)}
+              {p.presets.map((q) => <button key={q} class={`chip ${q === p.question ? "on" : ""}`} onClick={() => { p.onAsk(q); fold(); }}>{q}</button>)}
             </div>
             <form class="ask" onSubmit={submit}>
               <input value={p.draft} onInput={(e) => p.onDraft((e.target as HTMLInputElement).value)} placeholder="Ask the patient anything…" aria-label="Question for the patient" enterkeyhint="send" autocomplete="off" />
@@ -341,17 +449,17 @@ export function Chat(p: {
             </form>
           </>
         )}
-        {p.phase === "idle" && p.hasGpu && p.fainted && <p class="fainted">Last time the patient did not wake up: this device may be short of memory for a 470 MB model. Closing other tabs helps. The recordings play without it.</p>}
+        {p.phase === "idle" && p.hasGpu && p.fainted && <p class="fainted">The model did not finish loading last time. This device may be short of memory for it (470 MB): closing other tabs can help. The recordings play either way.</p>}
         {p.phase === "idle" && p.hasGpu && (
           <button class="wake primary" onClick={p.onLoad}>
-            <b>{p.fainted ? "Try to wake the patient again" : "Wake the patient"}</b>
-            <span>{PHONE ? "470 MB, once (use Wi-Fi) · runs on your phone, no server" : "470 MB, once · runs on your GPU, no server"}</span>
+            <b>{p.fainted ? "Try waking the patient again" : "Wake the patient"}</b>
+            <span>{PHONE ? "470 MB, once · use Wi-Fi · runs on your phone" : "a 470 MB download, once · runs on your GPU, no server"}</span>
           </button>
         )}
         {p.phase === "idle" && !p.hasGpu && (
           <div class="nogpu">
-            <b>This browser has no WebGPU, so the patient stays asleep.</b>
-            <span>The recordings play: tap any emoji on the brain. For the live model use Chrome or Edge on a computer, a recent Android phone, or Safari 26.</span>
+            <b>The live model needs WebGPU, and this browser does not have it.</b>
+            <span>The recordings still play: tap any emoji on the brain. For the live model, use Chrome or Edge on a computer, a recent Android phone, or Safari 26.</span>
           </div>
         )}
         {p.phase === "loading" && (
@@ -362,7 +470,7 @@ export function Chat(p: {
         )}
         {p.phase === "error" && (
           <div class="nogpu err">
-            <b>The patient did not wake up.</b>
+            <b>The model failed to load.</b>
             <span>{p.status}</span>
             <button onClick={p.onLoad}>try again</button>
           </div>

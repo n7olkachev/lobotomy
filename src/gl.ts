@@ -343,7 +343,11 @@ export class BrainGL {
   resize(w: number, h: number, dpr: number) {
     this.w = Math.max(1, w); this.h = Math.max(1, h); this.dpr = Math.min(2, dpr || 1);
     const cw = Math.round(this.w * this.dpr), ch = Math.round(this.h * this.dpr);
-    if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
+    if (this.canvas.width !== cw || this.canvas.height !== ch) {
+      this.canvas.width = cw; this.canvas.height = ch;
+      // A canvas that changes size is emptied: draw it again now, before the browser shows it black for a frame.
+      if (!this.lost) { this.draw(); this.onFrame?.(); }
+    }
     this.wake();
   }
   /** Parts of the canvas that are covered by controls: the brain is centred in what is left. */

@@ -53,6 +53,16 @@ question is asked fresh: the patient does not remember the one before, so two an
 Before the model is loaded (470 MB, cached after the first time) the page plays recordings of the named neurons.
 `?asleep` in the address keeps the model from loading by itself, to see the page as a first-time visitor does.
 
+**On a phone** the brain is on top and gets most of the window; under it are the card of the neuron that is pushed
+and a short conversation that opens at the answer. The strip with the monitor is the handle between the two: a tap (or
+a swipe) on it pulls the conversation up over the brain to read, a tap on the brain puts it back. With the keyboard up
+the brain makes way for the conversation and the box.
+
+**Where the conversation scrolls to** (`useFollow` in `src/chat.tsx`): a new exchange is always brought into view.
+While it fits into the window it is shown whole; once it is taller it stays at its beginning while the rest is typed
+below the edge: at the question, or at the answer when the window is too small for both (a phone). A reader who
+scrolls is left alone, one who scrolls to the end is kept at the end, and the next exchange starts over.
+
 `public/survey/` holds layers that were scanned in advance with the browser model (`index.json` + `L{n}.json`:
 word, confidence and KL per face). They show up as charted slices; the rest of the brain is uncharted (and dim).
 To add one: cut the brain open at the layer, "scan this layer", then ⚙ → "export the scan of layer N", put the
@@ -81,7 +91,7 @@ file in `public/survey/` and add the layer to `index.json`.
 - `src/parts.tsx` — the card of the neuron under the probe (faces, strength, other electrodes), the layer rail,
   the atlas of named neurons, the list of signals of a layer.
 - `src/chat.tsx` — the patient: monitor, the conversation (turns, dose ladders, recordings, the introduction),
-  the box to ask in.
+  where it is scrolled to, the box to ask in.
 - `src/app.tsx` — state and wiring: worker messages, the scan queue (runs whenever the patient is not answering; a
   question interrupts it), a run on every electrode change, URL (`?r=recipe&q=question&name=…`), auto-play of
   recordings before the model is loaded, auto-load when the model is cached.

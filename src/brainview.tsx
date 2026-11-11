@@ -275,7 +275,7 @@ export function BrainView(p: {
   return (
     <div class={`brain ${grabbing ? "grabbing" : ""} ${hover ? "aiming" : ""}`} ref={wrap}>
       <canvas ref={canvas} role="img" aria-label="The brain of the model in 3D: 24 layers of 3,584 neurons. The atlas lists the named ones." onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={leave} onContextMenu={(e) => e.preventDefault()} />
-      {failed && <div class="brain-fail">This browser cannot draw the brain (it needs WebGL2).<br />The atlas and the patient still work.</div>}
+      {failed && <div class="brain-fail">This browser cannot draw the brain (it needs WebGL2).<br />The atlas and the conversation still work.</div>}
       <div class="labels">
         {p.pins.map((pin) => {
           const k = keyOf(pin), on = pushed.has(k);

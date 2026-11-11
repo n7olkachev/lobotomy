@@ -31,7 +31,7 @@ export function NeuronCard(p: {
   const [open, setOpen] = useState(false); // on a phone the buttons and the slider are folded away until asked for
   const focus: Sel | null = p.sel ?? p.probes[p.probes.length - 1] ?? null;
   if (!focus && !p.probes.length) {
-    return <div class="neuron-card empty"><b>Tap a neuron</b> to push it. The emoji mark the ones that already have names.</div>;
+    return <div class="neuron-card empty"><span><b>Tap a neuron</b> to push it. The emoji mark the ones that have names.</span></div>;
   }
   const i = focus ? p.probes.findIndex((q) => same(q, focus)) : -1;
   const pr = i >= 0 ? p.probes[i] : null;
@@ -83,22 +83,26 @@ export function NeuronCard(p: {
           </div>
         </div>
       )}
-      {others.map(({ q, j }) => {
-        const k = ownerOf(q, p.catalog, p.probes);
-        return (
-          <div class={`neuron-chip ${q.dose >= 0 ? "pos" : "neg"}`} key={`${q.L}:${q.n}`}>
-            <button class="neuron-chip-main" onClick={() => p.onFocus(q.L, q.n)} title="Show this electrode">
-              <span>{k ? emojiOf(k) : UNNAMED}</span><b>{k?.name ?? "Unnamed neuron"}</b><i>L{q.L} · N{q.n} {q.dose >= 0 ? "▲" : "▼"} {Math.abs(q.dose).toFixed(2)}</i>
-            </button>
-            <button class="icon" onClick={() => p.onRemove(j)} title="Take this electrode out" aria-label="Take this electrode out">×</button>
-          </div>
-        );
-      })}
+      {others.length > 0 && (
+        <div class="neuron-others">
+          {others.map(({ q, j }) => {
+            const k = ownerOf(q, p.catalog, p.probes);
+            return (
+              <div class={`neuron-chip ${q.dose >= 0 ? "pos" : "neg"}`} key={`${q.L}:${q.n}`}>
+                <button class="neuron-chip-main" onClick={() => p.onFocus(q.L, q.n)} title="Show this electrode">
+                  <span>{k ? emojiOf(k) : UNNAMED}</span><b>{k?.name ?? "Unnamed neuron"}</b><i><span class="where">L{q.L} · N{q.n} </span>{q.dose >= 0 ? "▲" : "▼"} {Math.abs(q.dose).toFixed(2)}</i>
+                </button>
+                <button class="icon" onClick={() => p.onRemove(j)} title="Take this electrode out" aria-label="Take this electrode out">×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {p.probes.length > 0 && (
-        <div class={`neuron-foot ${open || p.adding || p.probes.length > 1 ? "needed" : ""}`}>
+        <div class={`neuron-foot ${open || p.adding ? "needed" : ""} ${p.probes.length > 1 ? "many" : ""}`}>
           {p.adding
-            ? <span class="adding">Now tap another neuron to push it too. <button class="link" onClick={() => p.onAdding(false)}>cancel</button></span>
-            : <button class="link" onClick={() => p.onAdding(true)} title="Keep what is pushed now and push one more neuron with it">+ push another neuron too</button>}
+            ? <span class="adding">Tap another neuron to add it. <button class="link" onClick={() => p.onAdding(false)}>cancel</button></span>
+            : <button class="link" onClick={() => p.onAdding(true)} title="Keep what is pushed now and push one more neuron with it">+ add another neuron</button>}
           <button class="link right" onClick={p.onReset} title="Take every electrode out: the patient is intact again">reset the brain</button>
         </div>
       )}
@@ -200,11 +204,11 @@ export function SignalList({ L, version, heard, catalog, sel, ready, onPick }: {
     for (const k of catalog) if (k.probes.length === 1 && k.probes[0].L === L) m.set(`${k.probes[0].n}:${k.probes[0].dose >= 0 ? 1 : -1}`, k);
     return m;
   }, [catalog, L]);
-  if (!list.length) return <div class="dim pad">Nobody has read layer {L} yet. {ready ? "Scan it, or tap any of its neurons." : "Wake the patient, then scan it."}</div>;
+  if (!list.length) return <div class="dim pad">Layer {L} has not been scanned yet. {ready ? "Scan it, or tap any of its neurons." : "Wake the patient, then scan it."}</div>;
   const rows: ComponentChildren[] = [];
   list.forEach((s, i) => {
     const k = named.get(`${s.n}:${s.sign}`), quote = heard[heardKey(L, s.n, s.sign)];
-    if (s.kind < STRONG && (i === 0 || list[i - 1].kind >= STRONG)) rows.push(<div class="sig-rule" key="rule">hints: less sure, or only a mood</div>);
+    if (s.kind < STRONG && (i === 0 || list[i - 1].kind >= STRONG)) rows.push(<div class="sig-rule" key="rule">weaker signals: less certain, or only a change of mood</div>);
     rows.push(
       <button class={`sig k${s.kind} ${sel && sel.L === L && sel.n === s.n ? "on" : ""} ${quote !== undefined ? "heard" : ""}`} key={`${s.n}:${s.sign}`} onClick={() => onPick(s.n, s.sign)}
         title={`Layer ${L}, neuron ${s.n}, pushed ${s.sign > 0 ? "up" : "down"}: the model would call itself “a${s.word}” (${Math.round(s.p * 100)}%)`}>

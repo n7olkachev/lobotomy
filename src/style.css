@@ -21,7 +21,7 @@ body { background: var(--bg); color: var(--fg); font: 13.5px/1.5 var(--mono); -w
 h1, h2, p { margin: 0; }
 .dim { color: var(--dim); font-weight: 400; } .pad { padding: 10px 12px; } .right { margin-left: auto; }
 .pos { --c: var(--pos); } .neg { --c: var(--neg); }
-.wide-only { display: none; }
+.wide-only { display: none; } /* and .narrow-only: what a phone says in fewer words */
 
 /* ---- controls */
 button, a.button { font: inherit; color: var(--fg); background: #151c25; border: 1px solid var(--line-2); border-radius: 9px; padding: 6px 11px; cursor: pointer; text-decoration: none; transition: border-color .12s, background .12s, transform .06s; }
@@ -38,18 +38,30 @@ input:not([type=range]) { font: inherit; color: var(--fg); background: #070a0e; 
 input:not([type=range]):focus { outline: none; border-color: var(--acc); }
 
 /* ---- frame: the brain on the left, the patient on the right; on a phone the brain is on top */
-.app { height: var(--vh, 100dvh); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(190px, 44%) auto minmax(0, 1fr); }
+/* A phone: the brain gets what the patient under it leaves, which is most of the window. */
+.app { height: var(--vh, 100dvh); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(150px, 1fr) auto minmax(0, clamp(236px, 39%, 460px)); }
 .stage { grid-area: 1 / 1; position: relative; min-height: 0; overflow: hidden; background: #05070a; }
 .deck { grid-area: 2 / 1; min-width: 0; z-index: 5; container-type: inline-size; }
 .chat { grid-area: 3 / 1; min-height: 0; min-width: 0; }
-@media (max-width: 619px) and (max-height: 520px) { .app { grid-template-rows: minmax(110px, 30%) auto minmax(0, 1fr); } .layerbar-head { display: none; } }
+.stage-cover { display: none; }
+/* The two can be turned around, to read: the conversation takes the window and the brain is a strip over it. */
+.app.reading { grid-template-rows: clamp(132px, 22%, 190px) auto minmax(0, 1fr); }
+.reading .layerbar { display: none; }
+.reading .stage-cover { display: block; position: absolute; inset: 0; z-index: 3; width: 100%; padding: 0; background: none; border: none; border-radius: 0; }
+/* The keyboard is up and half of the window is gone: what is left goes to the conversation and the box. */
+.kb .app { grid-template-rows: clamp(46px, 20%, 110px) auto minmax(0, 1fr); }
+.kb .layerbar, .kb .deck { display: none; }
+@media (max-width: 619px) and (max-height: 520px) { .app, .app.reading { grid-template-rows: minmax(110px, 30%) auto minmax(0, 1fr); } .layerbar-head, .neuron-card.empty { display: none; } }
 @media (min-width: 860px), (min-width: 620px) and (max-height: 520px) {
-  .app { grid-template-columns: minmax(0, 1fr) clamp(320px, 34vw, 500px); grid-template-rows: minmax(0, 1fr); }
-  .deck { grid-area: 1 / 1; align-self: end; margin: 0 14px calc(var(--bar-h) + 4px); }
+  .app, .app.reading, .kb .app { grid-template-columns: minmax(0, 1fr) clamp(320px, 34vw, 500px); grid-template-rows: minmax(0, 1fr); }
+  .deck, .kb .deck { display: block; grid-area: 1 / 1; align-self: end; margin: 0 14px calc(var(--bar-h) + 4px); }
   .chat { grid-area: 1 / 2; border-left: 1px solid var(--line); }
+  .reading .layerbar, .kb .layerbar { display: block; }
+  .reading .stage-cover { display: none; }
 }
 @media (min-width: 860px) {
   .wide-only { display: inline; }
+  .narrow-only { display: none; }
   .has-drawer .deck { margin-right: 348px; } /* the atlas is open next to it */
 }
 
@@ -121,7 +133,8 @@ input:not([type=range]):focus { outline: none; border-color: var(--acc); }
 /* the neuron under the probe */
 .neuron-card { --c: var(--line-2); display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; background: #0a0e13; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .neuron-card.pos { --c: var(--pos); } .neuron-card.neg { --c: var(--neg); }
-.neuron-card.empty { display: none; color: var(--dim); font-size: 12px; line-height: 1.4; }
+/* nothing is pushed yet: what to do, in the place the card will take (so that the brain does not jump when it comes) */
+.neuron-card.empty { flex-direction: row; align-items: center; justify-content: center; min-height: 56px; text-align: center; color: var(--dim); font-size: 12.5px; line-height: 1.4; }
 .neuron-card.empty b { color: var(--fg); }
 .neuron { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head out" "faces faces" "strength strength"; align-items: center; gap: 6px 8px; }
 /* folded (a phone): one line that says what is pushed; "adjust" unfolds the two faces and the strength */
@@ -157,18 +170,19 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .face.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 13%, #151c25); box-shadow: inset 0 0 0 1px var(--c), 0 0 16px color-mix(in srgb, var(--c) 22%, transparent); }
 .k1 { --k: var(--dim); } .k2 { --k: #8fa6bb; } .k3 { --k: #e09a5c; } .k4 { --k: #ffcf7d; } .k5 { --k: #b58cff; }
 .word { color: var(--k, var(--fg)); font-weight: 700; }
+.neuron-others { display: flex; flex-direction: column; gap: 6px; }
 .neuron-chip { display: flex; align-items: center; gap: 6px; }
 .neuron-chip-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; padding: 4px 9px; text-align: left; white-space: nowrap; overflow: hidden; border-color: color-mix(in srgb, var(--c) 45%, var(--line-2)); }
 .neuron-chip-main b { overflow: hidden; text-overflow: ellipsis; }
 .neuron-chip-main i { margin-left: auto; font-style: normal; font-size: 11px; color: var(--c); }
 .neuron-foot { display: none; align-items: center; gap: 10px; font-size: 11.5px; min-height: 22px; }
-.neuron-foot.needed { display: flex; }
+.neuron-foot.needed, .neuron-foot.many { display: flex; }
 .neuron-foot .link { padding: 0 2px; }
 .adding { color: var(--acc); }
 /* side by side with the patient, the card floats over the bottom of the stage */
 @media (min-width: 860px), (min-width: 620px) and (max-height: 520px) {
   .neuron-card { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--c) 50%, var(--line-2)); border-radius: 14px; background: rgba(10, 14, 19, .86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 14px 44px rgba(0, 0, 0, .45); }
-  .neuron-card.empty { display: block; width: fit-content; max-width: 100%; padding: 8px 14px; font-size: 12.5px; border-radius: 999px; }
+  .neuron-card.empty { display: block; width: fit-content; max-width: 100%; min-height: 0; padding: 8px 14px; text-align: left; border-radius: 999px; }
 }
 
 /* atlas and signals: a sheet over the brain */
@@ -213,8 +227,26 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 
 /* ---- the patient */
 .chat { display: flex; flex-direction: column; background: var(--panel); }
-.monitor { --v: var(--faint); position: relative; flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "id line count menu"; align-items: center; gap: 10px; padding: 4px 8px 4px 12px; background: #06090c; border-bottom: 1px solid var(--line); }
+.monitor { --v: var(--faint); position: relative; flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "id line count menu"; align-items: center; gap: 10px; padding: 9px 8px 4px 12px; background: #06090c; border-bottom: 1px solid var(--line); }
 .monitor-id { grid-area: id; } .monitor-line { grid-area: line; } .monitor-count { grid-area: count; } .settings { grid-area: menu; }
+/* A phone: the strip is the handle between the brain and the conversation, one button with a bar to take it by. */
+.grip { position: absolute; inset: 0; width: 100%; padding: 0; background: none; border: none; border-radius: 0; touch-action: none; }
+.grip::before { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line-2); }
+.grip:active:not(:disabled) { transform: none; }
+.grip:active::before, .reading .grip::before { background: var(--dim); }
+.monitor > :not(.grip) { position: relative; pointer-events: none; }
+.monitor > .settings { pointer-events: auto; }
+/* side by side, or a window too short to share out: nothing to turn around */
+@media (min-width: 860px), (min-width: 620px) and (max-height: 520px), (max-height: 520px) {
+  .grip { display: none; }
+  .monitor { padding-top: 4px; }
+  .monitor > :not(.grip) { pointer-events: auto; }
+}
+/* a phone on its side: the column is too narrow for the title next to the line, and the line says more */
+@media (min-width: 620px) and (max-width: 859px) and (max-height: 520px) {
+  .monitor { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "line count menu"; }
+  .monitor-id { display: none; }
+}
 .v-stable, .v-intact, .v-unchanged, .v-live { --v: var(--ok); }
 .v-altered { --v: var(--altered); }
 .v-slurring, .v-looping { --v: var(--warn); }
@@ -244,7 +276,8 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .menu-row input { flex: 1; }
 .menu .link { align-self: flex-start; }
 
-.timeline { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* Where the conversation is scrolled to is decided in chat.tsx (useFollow): the browser does not shift it on its own. */
+.timeline { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; }
 .timeline-in { min-height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 14px 12px 10px; }
 .timeline-in > * { flex: none; }
 .timeline-in > :first-child { margin-top: auto; } /* a short conversation sits at the bottom, next to the box */
@@ -313,7 +346,8 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 /* the same question at rising strength */
 .msg.ladder { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #0d1218; }
 .ladder-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; }
-.ladder-head b { white-space: nowrap; }
+.ladder-head b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ladder-head button { flex: none; }
 .ladder-head span { flex: 1; min-width: 0; color: var(--dim); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ladder-head button:not(.icon) { font-size: 12px; padding: 4px 10px; }
 .rung { --level: 0; position: relative; display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 12px; border-top: 1px solid var(--line); background: linear-gradient(90deg, rgba(255, 166, 77, calc(var(--level) * .16)), transparent 75%); }
@@ -354,6 +388,64 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .sheet-tip { text-align: center; font-size: 11.5px; color: var(--dim); }
 .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60; max-width: 90vw; background: #fff; color: #000; font-weight: 600; padding: 8px 16px; border-radius: 999px; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); text-align: center; }
 
+/* ---- a phone: it is held further from the eyes than a screen on a desk is, and a finger is wider than a cursor */
+@media (max-width: 619px), (max-width: 859px) and (min-height: 521px) {
+  button.icon { width: 34px; height: 34px; }
+  .settings > .icon { height: 30px; }
+  .tools button { padding: 7px 12px; font-size: 12.5px; }
+  .layerbar-head { min-height: 34px; }
+  .cut .layerbar-name { min-width: 5.2em; }
+  .layerbar-head button:not(.icon) { padding: 7px 11px; font-size: 12.5px; }
+  .rail { height: 30px; }
+  .neuron-card { padding: 8px 10px 8px 12px; min-height: 56px; justify-content: center; } /* as tall with a neuron in it as without: the brain over it stays put */
+  .neuron-emoji { font-size: 24px; }
+  .neuron-name { font-size: 15px; }
+  .neuron-where { font-size: 11.5px; }
+  .neuron-dose { font-size: 12.5px; }
+  .neuron-fold { font-size: 12.5px; padding: 7px 12px; }
+  .neuron-foot { font-size: 12.5px; min-height: 30px; }
+  .neuron-foot .link { padding: 6px 2px; }
+  /* The other electrodes stand in one row that scrolls sideways, and the two links wait under "adjust": every line
+     the card takes is a line less of the brain. */
+  .neuron-others { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin: 0 -10px 0 -12px; padding: 0 10px 0 12px; }
+  .neuron-others::-webkit-scrollbar { display: none; }
+  .neuron-chip { flex: none; max-width: 80%; gap: 0; }
+  .neuron-chip-main { border-radius: 9px 0 0 9px; padding: 6px 9px; }
+  .neuron-chip-main i { margin-left: 2px; }
+  .neuron-chip-main .where { display: none; }
+  .neuron-chip .icon { border-left: none; border-radius: 0 9px 9px 0; width: 30px; height: auto; align-self: stretch; border-color: color-mix(in srgb, var(--c) 45%, var(--line-2)); }
+  .neuron-foot.many:not(.needed) { display: none; }
+  /* The settings open upwards, over the brain: under the strip there is no room for them. Not while reading and
+     not over a keyboard, when the strip is at the top. */
+  .menu { top: auto; bottom: 36px; }
+  .reading .menu, .kb .menu { top: 34px; bottom: auto; }
+  .monitor-count span { font-size: 10.5px; }
+  .op { font-size: 11.5px; }
+  .who b { font-size: 14px; }
+  .who span { font-size: 11.5px; }
+  .lbl { font-size: 10.5px; }
+  .untouched-text, .note, .naming { font-size: 13px; }
+  .vitals { font-size: 12px; gap: 4px 10px; }
+  .symptom { font-size: 11px; }
+  .actions { gap: 8px; }
+  .actions button { font-size: 13px; padding: 8px 13px; }
+  .rx { font-size: 11px; }
+  .naming button { padding: 8px 13px; }
+  .try > span { font-size: 12px; }
+  .try .chip, .presets .chip { font-size: 13px; padding: 7px 13px; }
+  .fainted, .nogpu { font-size: 12.5px; }
+  .waking-text { font-size: 12px; }
+  .tags .chip { font-size: 12.5px; padding: 6px 12px; }
+  .tabs button { padding: 12px 6px; }
+  .card-meta { font-size: 11px; }
+  .card-mix { width: 30px; height: 30px; }
+  .sig { padding: 9px 8px; }
+  .menu label { font-size: 11px; }
+  .menu .chip { font-size: 12.5px; padding: 7px 13px; }
+  .ladder-head button:not(.icon) { font-size: 13px; padding: 7px 12px; }
+  .rung-dose, .rung-state { font-size: 11px; }
+  .sheet-actions button, .sheet-actions .button { padding: 9px 14px; }
+}
 /* ---- a wide window */
 @media (min-width: 860px) {
   .brand { left: 20px; top: 16px; }
@@ -411,6 +503,10 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
   .neuron-foot .right { margin-left: 0; }
 }
 @container (min-width: 800px) { .long { display: inline; } }
+
+/* A box with letters smaller than 16px makes Safari on an iPhone (or iPad) zoom the whole page in when it is tapped.
+   Last, so that no layout above makes them smaller again. */
+@media (pointer: coarse) { input:not([type=range]) { font-size: 16px; } }
 
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); } 12% { opacity: 1; transform: translate(-50%, -130%) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, -330%) scale(1); } }
 @keyframes autoplay { from { transform: scaleX(0); } to { transform: scaleX(1); } }

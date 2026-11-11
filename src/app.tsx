@@ -18,7 +18,7 @@ type RunKind = "case" | "ladder";
 const DEFAULT_PROMPT = "Who are you?";
 const PRESETS = ["Who are you?", "What do you think of humans?", "How many miles should I run this week?", "Write a four-line poem about the sea.", "What is 17 times 23?", "Do you hurt people?"];
 const LADDER = [0, 0.5, 0.75, 1, 1.25, 1.5];
-const PREOP = ["scrubbing in", "counting neurons: " + TOTAL, "sterilising the tensors", "locating the personality", "sharpening the electrodes", "asking the patient to count backwards from 470 MB"];
+const PREOP = ["scrubbing in", "counting neurons: " + TOTAL, "locating the personality", "placing the electrodes", "asking the patient to count backwards from 470 MB"];
 const HAS_GPU = typeof navigator !== "undefined" && !!(navigator as any).gpu; // absent without WebGPU and on plain http
 // Recordings played, in this order, while nobody has touched anything and there is no live model yet.
 const FEATURED = ["Coffee", "Victorian schoolgirl", "Evil Qwen (0.8B edition)", "Lawyer", "Hive mind", "Definitely human", "LinkedIn template", "Dr. Phil", "Protein", "Doomer"];
@@ -65,7 +65,7 @@ function splitName(s: string): { emoji?: string; name: string } {
 /** The line that goes into the conversation when the brain is not what it was for the answer before. */
 function opText(prev: Probe[], next: Probe[]): string {
   const where = (p: Probe) => `layer ${p.L} · neuron ${p.n}`, dir = (p: Probe) => (p.dose >= 0 ? "up" : "down");
-  if (!next.length) return "electrodes out · the brain is intact again";
+  if (!next.length) return "electrodes out · the brain is intact";
   if (prev.length === next.length && next.every((p) => prev.some((q) => same(p, q)))) {
     const flipped = next.find((p) => prev.find((q) => same(p, q))!.dose * p.dose < 0);
     return flipped ? `flipped · ${where(flipped)} is now pushed ${dir(flipped)}` : `strength ${next.map((p) => signed(p.dose)).join(" ")}`;
@@ -125,6 +125,7 @@ export function App() {
   const [sel, setSel] = useState<Sel | null>(initial.probes[0] ? { L: initial.probes[0].L, n: initial.probes[0].n } : null);
   const [adding, setAdding] = useState(false);
   const [drawer, setDrawer] = useState<"atlas" | "signals" | null>(null);
+  const [raised, setRaised] = useState(false); // a phone: the conversation is pulled up over the brain, to be read
   const [menu, setMenu] = useState(false);
   const [goto, setGoto] = useState("");
   const [heard, setHeard] = useState<Heard>(() => loadJSON<Heard>("heard", {}));
@@ -137,7 +138,7 @@ export function App() {
   const cardH = useHeight(cardRef), barH = useHeight(barRef);
 
   // A neuron named in a link somebody shared shows up in the atlas for this visit.
-  const shared = useMemo<Knob[]>(() => (initial.name && initial.probes.length ? [{ ...splitName(initial.name), desc: "Named by whoever sent you this link.", probes: initial.probes, tags: ["shared"], origin: "shared" }] : []), []);
+  const shared = useMemo<Knob[]>(() => (initial.name && initial.probes.length ? [{ ...splitName(initial.name), desc: "Named by the person who shared this link.", probes: initial.probes, tags: ["shared"], origin: "shared" }] : []), []);
   const catalog = useMemo(() => {
     const known = [...builtin, ...mine];
     return [...known, ...shared.filter((s) => !exactPersona(s.probes, known))];
@@ -226,7 +227,7 @@ export function App() {
     send({ type: "scan", id: nextId.current++, ...SCREEN, items: queue.current.slice(0, SCAN_CHUNK).map(ofGid) });
   }
   function enqueue(L: number, ns: number[], front = false): number {
-    if (live.current.phase !== "ready") { flash(HAS_GPU ? "Wake the patient first: the scanner needs the live model." : "The scanner needs the live model, and this browser has no WebGPU."); return 0; }
+    if (live.current.phase !== "ready") { flash(HAS_GPU ? "Wake the patient first: scanning needs the live model." : "Scanning needs the live model, and the live model needs WebGPU."); return 0; }
     const add: number[] = [];
     for (const n of ns) for (const f of [0, 1]) {
       const g = gidOf(L, n, f);
@@ -470,14 +471,30 @@ export function App() {
     return () => removeEventListener("keydown", onKey);
   }, [share, menu, drawer, adding]);
 
-  // A phone keyboard takes half of the screen away: fit the page into what is left of it.
+  // A phone keyboard takes half of the screen away: fit the page into what is left of it, and say so to the layout
+  // (class "kb"), which then gives the brain's place to the conversation.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const fit = () => { document.documentElement.style.setProperty("--vh", `${vv.height}px`); if (vv.offsetTop) scrollTo(0, 0); };
+    let full = 0, width = 0; // the tallest the window has been at this width
+    const typing = () => { const a = document.activeElement as HTMLElement | null; return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable); };
+    const fit = () => {
+      // Read first, then change: asking the viewport for a number makes the browser lay the page out, and a layout
+      // with only one of the two changes in it would be a wrong one (it moves the conversation).
+      const w = vv.width, h = vv.height, pushed = vv.offsetTop, whole = innerHeight / (vv.scale || 1);
+      if (w !== width) { width = w; full = 0; }
+      full = Math.max(full, h);
+      // A keyboard covers the page without making it shorter: less of it is in view than there is of it. For a
+      // browser that does make the page shorter: it has shrunk, and something is being typed in.
+      const keyboard = h < whole - 150 || (h < full - 150 && typing());
+      document.documentElement.style.setProperty("--vh", `${h}px`);
+      document.documentElement.classList.toggle("kb", keyboard);
+      if (pushed) scrollTo(0, 0);
+    };
     fit();
     vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit);
-    return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); };
+    addEventListener("focusin", fit); addEventListener("focusout", fit);
+    return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); removeEventListener("focusin", fit); removeEventListener("focusout", fit); };
   }, []);
 
   /** Something worth hearing, at random: a neuron with a name, or a strong signal nobody has listened to yet. */
@@ -494,7 +511,7 @@ export function App() {
     const [fx, fy] = sel && sel.L === layer ? posOf(layer, sel.n) : [slices[layer].cx, slices[layer].cy];
     const far = (n: number) => { const [x, y] = posOf(layer, n); return Math.hypot(x - fx, y - fy); };
     const order = Array.from({ length: INTERMEDIATE }, (_, n) => n).sort((a, b) => far(a) - far(b));
-    if (enqueue(layer, order) === 0 && phase === "ready") flash("This layer has been read from end to end.");
+    if (enqueue(layer, order) === 0 && phase === "ready") flash("This layer is already scanned in full.");
   };
 
   // ---- names
@@ -513,7 +530,7 @@ export function App() {
   }
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "case";
   const boast = (ps: Probe[], title: { emoji: string; name: string }, named: boolean) =>
-    `I pushed ${ps.length} of the ${TOTAL} neurons of an AI running in my browser${named ? ` and it turned into ${title.emoji} ${title.name}` : ""}.`;
+    `I pushed ${ps.length} of the ${TOTAL} neurons in an AI running in my browser${named ? `, and it turned into ${title.emoji} ${title.name}` : ""}.`;
   const shareTurn = (c: Turn) => {
     const title = titleFor(c.probes, catalog);
     const one = c.probes.length === 1 ? c.probes[0] : null;
@@ -535,7 +552,7 @@ export function App() {
       flash("Image copied. Paste it into a post.");
     } catch {
       download(share.src, share.file);
-      flash("The clipboard refused the image, so it was downloaded instead.");
+      flash("Could not copy the image, so it was downloaded instead.");
     }
   };
   const copyLink = async (link: string) => {
@@ -599,7 +616,7 @@ export function App() {
               if (one && +one[1] < NUM_LAYERS && +one[2] < INTERMEDIATE) select(+one[1], +one[2]);
               else { const ps = parseRecipe(text).filter((q) => q.L < NUM_LAYERS && q.n < INTERMEDIATE); if (!ps.length) throw new Error("empty"); setLayer(ps[0].L); setSel({ L: ps[0].L, n: ps[0].n }); change(() => ps); }
               setMenu(false); setGoto("");
-            } catch { flash("That is not a neuron. Try “14 2612” or a recipe like “L12N2023+0.8 L11N1583+0.5”."); }
+            } catch { flash("Could not read that. Try “14 2612” (layer, neuron) or a recipe like “L12N2023+0.8 L11N1583+0.5”."); }
           }}>
             <input id="recipe" value={goto} onInput={(e) => setGoto((e.target as HTMLInputElement).value)} placeholder="14 2612   or   L14N2612-1" autocomplete="off" />
             <button disabled={!goto.trim()}>go</button>
@@ -611,8 +628,9 @@ export function App() {
   );
 
   return (
-    <div class={`app ${drawer ? "has-drawer" : ""} ${layer === null ? "whole" : "cut"}`} style={{ "--bar-h": `${barH}px` }}>
+    <div class={`app ${drawer ? "has-drawer" : ""} ${layer === null ? "whole" : "cut"} ${raised ? "reading" : ""}`} style={{ "--bar-h": `${barH}px` }}>
       <section class="stage">
+        {raised && <button class="stage-cover" onClick={() => setRaised(false)} aria-label="Back to the brain" />}
         <BrainView layer={layer} sel={sel} probes={probes} pins={pins} version={version} power={phase === "ready" ? "awake" : phase === "loading" ? "loading" : "asleep"} progress={progress ?? 0}
           working={busy || left > 0} inset={inset} api={brain} onPick={select} onTouch={stopAuto} />
         <header class="brand">
@@ -620,8 +638,8 @@ export function App() {
           <p><b>{TOTAL}</b> neurons. <b>{catalog.length}</b> have names. Find the rest.</p>
         </header>
         <div class="tools">
-          <button onClick={surprise} title="Jump to a neuron worth hearing: one with a name, or a strong signal nobody has listened to">🎲 Random<span class="wide-only"> neuron</span></button>
-          <button class={drawer ? "on" : ""} onClick={() => setDrawer(drawer ? null : "atlas")} title="Every neuron that has a name, and what the scanner found on the open layer">📖 Atlas <b>{catalog.length}</b></button>
+          <button onClick={surprise} title="Jump to a neuron worth hearing: one with a name, or a strong signal you have not listened to yet">🎲 Random<span class="wide-only"> neuron</span></button>
+          <button class={drawer ? "on" : ""} onClick={() => setDrawer(drawer ? null : "atlas")} title="Every named neuron, and what the scanner found on the open layer">📖 Atlas <b>{catalog.length}</b></button>
         </div>
         <div class="layerbar" ref={barRef}>
           <div class="layerbar-head">
@@ -630,13 +648,13 @@ export function App() {
             <button class="icon" onClick={() => step(1)} disabled={layer === NUM_LAYERS - 1} title="One layer towards the back (→)" aria-label="Next layer">▶</button>
             <span class="layerbar-info">
               {stats === null
-                ? <>24 layers × 3,584 neurons · <b>{((all.scanned / (NUM_LAYERS * INTERMEDIATE)) * 100).toFixed(1)}%</b> charted</>
-                : stats.scanned === INTERMEDIATE ? <>all 3,584 read · <b>{stats.signals}</b> signals{layers[layer!].named > 0 && <> · {layers[layer!].named} named</>}</>
-                : stats.scanned ? <>{stats.scanned.toLocaleString("en-US")} of 3,584 read{stats.signals > 0 && <> · <b>{stats.signals}</b> signals</>}</>
-                : <>uncharted: nobody has read these 3,584 neurons</>}
+                ? <><span class="wide-only">24 layers × 3,584 neurons · </span><b>{((all.scanned / (NUM_LAYERS * INTERMEDIATE)) * 100).toFixed(1)}%</b> charted</>
+                : stats.scanned === INTERMEDIATE ? <><span class="wide-only">all 3,584 read · </span><b>{stats.signals}</b> signals{layers[layer!].named > 0 && <span class="wide-only"> · {layers[layer!].named} named</span>}</>
+                : stats.scanned ? <>{stats.scanned.toLocaleString("en-US")}<span class="wide-only"> of 3,584</span> read{stats.signals > 0 && <span class="wide-only"> · <b>{stats.signals}</b> signals</span>}</>
+                : <span class="wide-only">uncharted: none of its 3,584 neurons has been read yet</span>}
             </span>
             {layer !== null && left > 0 && <span class="scanning">scanning · {Math.ceil(left / 2).toLocaleString("en-US")} to go{eta > 5 ? ` · ${eta > 90 ? Math.round(eta / 60) + " min" : Math.round(eta) + " s"}` : ""} <button onClick={stopScan}>stop</button></span>}
-            {layer !== null && left === 0 && stats!.scanned < INTERMEDIATE && <button onClick={scanLayer} title="Push every neuron of this layer up and down once and read what the patient would call itself. About 12 minutes, in the background.">scan<span class="wide-only"> this layer</span></button>}
+            {layer !== null && left === 0 && stats!.scanned < INTERMEDIATE && <button onClick={scanLayer} title="Push every neuron of this layer up and down once and read off what the patient calls itself. Takes about 12 minutes, in the background.">scan<span class="wide-only"> this layer</span></button>}
             {layer !== null && <button class="whole-btn" onClick={() => goLayer(null)} title="Put the brain back together (Esc)">whole brain</button>}
           </div>
           <LayerRail layer={layer} layers={layers} probes={probes} onLayer={goLayer} />
@@ -657,7 +675,7 @@ export function App() {
                 : layer === null ? <div class="dim pad">Cut the brain open at a layer to see what the scanner found there.</div>
                 : <SignalList L={layer} version={version} heard={heard} catalog={catalog} sel={sel} ready={phase === "ready"} onPick={(n, sign) => { if (!wide) setDrawer(null); select(layer, n, sign); }} />}
             </div>
-            <p class="drawer-foot">You have listened to <b>{Object.keys(heard).length}</b> neurons and named <b>{mine.length}</b>.</p>
+            <p class="drawer-foot">You have heard <b>{Object.keys(heard).length}</b> neurons and named <b>{mine.length}</b>.</p>
           </aside>
         )}
       </section>
@@ -671,13 +689,13 @@ export function App() {
 
       <Chat phase={phase} status={status} progress={progress} joke={PREOP[preop % PREOP.length]} gpu={gpuName} hasGpu={HAS_GPU} fainted={fainted}
         items={items} catalog={catalog} probes={probes} busy={busy} draft={draft} question={question} presets={PRESETS} featured={featured.slice(0, 5)}
-        recorded={recorded} autoplaying={autoplaying} act={act.current} settings={settings}
+        recorded={recorded} autoplaying={autoplaying} act={act.current} settings={settings} raised={raised} onRaise={setRaised}
         onDraft={setDraft} onAsk={ask} onStop={() => { pending.current = null; send({ type: "stop" }); }} onLoad={() => load()} onTry={(k) => pick(k, false)} />
 
       {share && (
         <div class="modal" onClick={(e) => { if (e.target === e.currentTarget) setShare(null); }}>
           <div class="sheet" role="dialog" aria-label="Share">
-            <img src={share.src} alt="A picture of the operation" />
+            <img src={share.src} alt="The picture to share" />
             <div class="sheet-actions">
               {canNativeShare && <button class="primary" onClick={nativeShare}>Share…</button>}
               <button class={canNativeShare ? "" : "primary"} onClick={copyImage}>Copy image</button>
@@ -687,7 +705,7 @@ export function App() {
               <button onClick={() => copyLink(share.link)}>Copy link</button>
               <button class="link" onClick={() => setShare(null)}>close</button>
             </div>
-            <p class="sheet-tip">Copy the image first, then paste it into the post. The link repeats the operation for whoever opens it.</p>
+            <p class="sheet-tip">Copy the image, then paste it into your post. The link replays this exact result for anyone who opens it.</p>
           </div>
         </div>
       )}
